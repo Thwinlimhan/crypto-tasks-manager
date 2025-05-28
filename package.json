@@ -1,0 +1,71 @@
+// File: project-root/package.json
+// This is the main package.json for the Electron desktop application.
+// It also includes scripts to build the web app.
+{
+  "name": "airdrop-manager-desktop",
+  "version": "1.0.0",
+  "description": "Desktop version of Crypto Airdrop Task Manager",
+  "main": "electron/main.js",
+  "author": "Airdrop Manager Team",
+  "license": "MIT",
+  "homepage": "./",
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "electron:dev": "concurrently \"npm run start\" \"wait-on http://localhost:3000 && electron .\"",
+    "electron:prod": "npm run build && electron .",
+    "package": "npm run build && electron-builder --publish=never",
+    "package:linux": "npm run build && electron-builder --linux --publish=never"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "electron-is-dev": "^2.0.0",
+    "electron-store": "^8.1.0",
+    "auto-launch": "^5.0.6"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0",
+    "wait-on": "^7.0.1",
+    "electron": "^29.0.0",
+    "electron-builder": "^24.9.1",
+    "react-scripts": "5.0.1",
+    "electron-reload": "^2.0.0-alpha.1"
+  },
+  "build": {
+    "appId": "com.airdropmanager.desktop.cloud",
+    "productName": "Airdrop Manager (Cloud)",
+    "directories": {
+      "output": "dist_electron_cloud",
+      "buildResources": "electron/assets"
+    },
+    "files": [
+      "build/**/*",
+      "electron/**/*",
+      "!electron/**/*.map",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "**/node_modules/some-native-module/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": "dmg",
+      "icon": "electron/assets/icon.icns"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "electron/assets/icon.ico"
+    },
+    "linux": {
+      "target": [
+        { "target": "AppImage", "arch": ["x64"] },
+        { "target": "deb", "arch": ["x64"] },
+        { "target": "rpm", "arch": ["x64"] }
+      ],
+      "category": "Office;Utility;",
+      "icon": "electron/assets"
+    }
+  }
+}

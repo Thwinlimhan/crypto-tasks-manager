@@ -1,0 +1,16 @@
+// File: project-root/public/manifest.json
+{
+  "short_name": "AirdropMgr",
+  "name": "Crypto Airdrop Task Manager",
+  "icons": [
+    { "src": "https://placehold.co/64x64/1F2937/FFFFFF?text=Icon&font=Inter", "sizes": "64x64", "type": "image/png", "purpose": "any" },
+    { "src": "https://placehold.co/192x192/1F2937/FFFFFF?text=Icon&font=Inter", "type": "image/png", "sizes": "192x192", "purpose": "any" },
+    { "src": "https://placehold.co/512x512/1F2937/FFFFFF?text=Icon&font=Inter", "type": "image/png", "sizes": "512x512", "purpose": "any maskable" }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "scope": "/",
+  "theme_color": "#111827",
+  "background_color": "#1F2937",
+  "description": "Track and manage your crypto airdrop activities efficiently."
+}
