@@ -6,7 +6,7 @@ import {
     createUserWithEmailAndPassword, 
     signInAnonymously 
 } from 'firebase/auth';
-import Icon from './Icon'; // Assuming Icon component is in the same directory or correctly pathed
+import Icon from './Icon.tsx'; // Assuming Icon component is in the same directory or correctly pathed
 
 interface AuthComponentProps {
   onUserAuthenticated: (user: any) => void; // Consider using firebase.User type if available
