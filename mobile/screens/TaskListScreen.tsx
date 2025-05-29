@@ -1,6 +1,7 @@
 // File: project-root/mobile/screens/TaskListScreen.tsx
 // Description: This screen displays the list of airdrop tasks, now integrated with Firebase Firestore
 // for real-time data synchronization and offline persistence.
+// Firestore collection path standardized and uses firestoreHelper.
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
@@ -19,10 +20,8 @@ import {
 import { useNavigation, useFocusEffect, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
-// Firebase imports - ensure you have @react-native-firebase/app, @react-native-firebase/auth, @react-native-firebase/firestore installed and setup
-// For this example, we'll use the modular Web SDK syntax which is common, but native modules are preferred for RN.
-// Assume firebase is initialized in a central file (e.g., mobile/firebaseConfig.ts or App.tsx)
-import { firebase } from '@react-native-firebase/firestore'; // Using @react-native-firebase
+// Firebase imports
+import { firebase } from '@react-native-firebase/firestore'; 
 import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
 
@@ -32,15 +31,16 @@ import type { AirdropTask, TaskStep, RootStackParamList } from '../types';
 import { useTheme } from '../ThemeContext';
 // Import NotificationManager functions
 import { scheduleNotification, cancelTaskNotification, generateNumericNotificationId } from '../NotificationManager';
+// Import Firestore helper
+import { getTasksCollectionPathForUser } from '../utils/firestoreHelper'; // UPDATED_IMPORT
 
-// Constants for Firestore and settings
-const TASKS_COLLECTION_BASE_PATH = 'artifacts'; // Base path as per security rules
-const APP_ID_PLACEHOLDER = 'crypto-airdrop-manager-mobile'; // Replace with actual app ID if dynamic
-const TASK_LIST_SETTINGS_KEY = 'airdrop-task-list-settings-v2'; // AsyncStorage key for list display settings
-const SETTINGS_STORAGE_KEY = 'airdrop-app-settings'; // AsyncStorage key for general app settings
+// Constants for settings
+// REMOVED: TASKS_COLLECTION_BASE_PATH, APP_ID_PLACEHOLDER, UNIFIED_TASKS_COLLECTION_NAME
+const TASK_LIST_SETTINGS_KEY = 'airdrop-task-list-settings-v2'; 
+const SETTINGS_STORAGE_KEY = 'airdrop-app-settings'; 
 const ALL_CATEGORIES_KEY = "All Categories";
 
-// Helper for color mapping (remains the same)
+// Helper for color mapping
 const colorMap: { [key: string]: string } = {
   'bg-blue-500': '#3B82F6', 'bg-purple-500': '#8B5CF6', 'bg-green-500': '#10B981',
   'bg-red-500': '#EF4444', 'bg-yellow-500': '#F59E0B', 'bg-pink-500': '#EC4899',
@@ -48,7 +48,7 @@ const colorMap: { [key: string]: string } = {
   'border-l-red-500': '#EF4444', 'border-l-yellow-500': '#F59E0B', 'border-l-green-500': '#10B981',
 };
 
-// Types for sorting and settings (remains the same)
+// Types for sorting and settings
 type SortCriteria = 'nextDue' | 'name' | 'priority' | 'streak';
 type SortOrder = 'asc' | 'desc';
 interface TaskListSettings {
@@ -58,7 +58,7 @@ interface TaskListSettings {
     selectedCategory: string;
 }
 
-// Navigation and Route props (remains the same)
+// Navigation and Route props
 type TaskListNavigationProp = NativeStackNavigationProp<RootStackParamList, 'TaskList'>;
 type TaskListRouteProp = RouteProp<RootStackParamList, 'TaskList'>;
 
@@ -81,22 +81,11 @@ const TaskListScreen = () => {
       selectedCategory: ALL_CATEGORIES_KEY,
   });
 
-  // Memoized categories from tasks (remains the same)
+  // Memoized categories from tasks
   const availableCategories = useMemo(() => {
     const categories = new Set(tasks.map(task => task.category).filter(Boolean));
     return [ALL_CATEGORIES_KEY, ...Array.from(categories).sort()];
   }, [tasks]);
-
-  // Get tasks collection path for the current user
-  const getTasksCollectionPathForUser = useCallback(() => {
-    if (!userId) return null;
-    // Using the private data path structure: artifacts/{appId}/users/{userId}/{your_collection_name}
-    // __app_id is typically available in a global scope in the web version.
-    // For mobile, you might hardcode it or fetch from a config.
-    const appId = typeof __app_id !== 'undefined' ? __app_id : APP_ID_PLACEHOLDER;
-    return `${TASKS_COLLECTION_BASE_PATH}/${appId}/users/${userId}/airdropTasks_mobile`;
-  }, [userId]);
-
 
   // Effect for Firebase Auth state
   useEffect(() => {
@@ -106,25 +95,20 @@ const TaskListScreen = () => {
         console.log("TaskListScreen: User authenticated, UID:", currentUser.uid);
       } else {
         setUserId(null);
-        setTasks([]); // Clear tasks if user logs out
+        setTasks([]); 
         setIsLoading(false);
         console.log("TaskListScreen: User logged out.");
-        // Potentially navigate to a login screen if auth is mandatory
-        // navigation.navigate('AuthScreen');
       }
     });
-    return subscriber; // Unsubscribe on unmount
+    return subscriber; 
   }, []);
 
 
-  // Load global notification setting from AsyncStorage (remains similar)
+  // Load global notification setting from AsyncStorage
   const loadAppSettings = useCallback(async () => {
     try {
-        // AsyncStorage is still used for app-specific settings not stored in Firestore
-        const storedSettings = await Platform.select({
-            native: () => import('@react-native-async-storage/async-storage'),
-            default: () => import('@react-native-async-storage/async-storage'),
-        })().then(module => module.default.getItem(SETTINGS_STORAGE_KEY));
+        const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+        const storedSettings = await AsyncStorage.getItem(SETTINGS_STORAGE_KEY);
 
         if (storedSettings) {
             const parsed = JSON.parse(storedSettings);
@@ -137,15 +121,13 @@ const TaskListScreen = () => {
     return false;
   }, []);
 
-  // Load list display settings from AsyncStorage (remains similar)
+  // Load list display settings from AsyncStorage
   useEffect(() => {
     loadAppSettings();
     const loadListSettings = async () => {
         try {
-            const storedSettings = await Platform.select({
-                native: () => import('@react-native-async-storage/async-storage'),
-                default: () => import('@react-native-async-storage/async-storage'),
-            })().then(module => module.default.getItem(TASK_LIST_SETTINGS_KEY));
+            const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+            const storedSettings = await AsyncStorage.getItem(TASK_LIST_SETTINGS_KEY);
             if (storedSettings) {
                 const parsedSettings = JSON.parse(storedSettings);
                 if (!parsedSettings.selectedCategory) {
@@ -160,19 +142,17 @@ const TaskListScreen = () => {
     loadListSettings();
   }, [loadAppSettings]);
 
-  // Save list display settings to AsyncStorage (remains similar)
+  // Save list display settings to AsyncStorage
   useEffect(() => {
     const saveListSettings = async () => {
         try {
-            await Platform.select({
-                native: () => import('@react-native-async-storage/async-storage'),
-                default: () => import('@react-native-async-storage/async-storage'),
-            })().then(module => module.default.setItem(TASK_LIST_SETTINGS_KEY, JSON.stringify(listSettings)));
+            const AsyncStorage = (await import('@react-native-async-storage/async-storage')).default;
+            await AsyncStorage.setItem(TASK_LIST_SETTINGS_KEY, JSON.stringify(listSettings));
         } catch (error) {
             console.error("TaskListScreen: Failed to save list settings to AsyncStorage:", error);
         }
     };
-    if(!isLoading && tasks.length > 0) { // Only save if not loading and tasks are present
+    if(!isLoading && tasks.length > 0) { 
         saveListSettings();
     }
   }, [listSettings, isLoading, tasks.length]);
@@ -182,13 +162,14 @@ const TaskListScreen = () => {
   useEffect(() => {
     if (!userId) {
       setIsLoading(false);
-      setTasks([]); // Clear tasks if no user
+      setTasks([]); 
       return;
     }
 
-    const tasksCollectionPath = getTasksCollectionPathForUser();
+    const tasksCollectionPath = getTasksCollectionPathForUser(userId, (typeof __app_id !== 'undefined' ? __app_id : undefined));
     if (!tasksCollectionPath) {
         setIsLoading(false);
+        console.warn("TaskListScreen: tasksCollectionPath is null, cannot fetch tasks.");
         return;
     }
     
@@ -199,8 +180,7 @@ const TaskListScreen = () => {
       .collection(tasksCollectionPath)
       .onSnapshot(async (querySnapshot) => {
         console.log("TaskListScreen: Firestore snapshot received. Documents count:", querySnapshot.size);
-        const currentNotificationSetting = await loadAppSettings(); // Refresh setting
-        let tasksNeedSavingToFirestore = false; // To track if any notificationId needs update in Firestore
+        const currentNotificationSetting = await loadAppSettings(); 
 
         const fetchedTasks: AirdropTask[] = querySnapshot.docs.map(doc => {
           const data = doc.data();
@@ -217,39 +197,32 @@ const TaskListScreen = () => {
             category: data.category || 'Uncategorized',
             priority: data.priority || 'medium',
             color: data.color || 'bg-gray-500',
-            notificationId: data.notificationId, // Keep existing numeric notificationId
+            notificationId: data.notificationId, 
           };
 
-          // Process notifications for each task
           let newNotificationId = task.notificationId;
           if (task.isActive && currentNotificationSetting) {
             if (task.nextDue.getTime() > Date.now()) {
-              // If task.notificationId is undefined or different from a newly generated one, reschedule.
-              // This is a simplified check; ideally, you'd also check if the due date or other relevant info changed.
               const expectedNumericId = generateNumericNotificationId(task.id);
-              if (task.notificationId !== expectedNumericId) { // Basic check if ID is missing or seems incorrect
-                  if (task.notificationId) cancelTaskNotification(task.id); // Cancel old one by task ID
+              if (task.notificationId !== expectedNumericId || !task.notificationId) { 
+                  if (task.notificationId) cancelTaskNotification(task.id); 
                   newNotificationId = scheduleNotification(task, task.nextDue, true);
                   if (newNotificationId !== task.notificationId) {
-                      tasksNeedSavingToFirestore = true;
-                      // Update Firestore with the new notificationId in a batch or individually
                       firestore().collection(tasksCollectionPath).doc(task.id).update({ notificationId: newNotificationId }).catch(e => console.error("Error updating notificationId in Firestore:", e));
                   }
               }
-            } else if (task.notificationId) { // Due date is past, ensure notification is cancelled
+            } else if (task.notificationId) { 
               cancelTaskNotification(task.id);
-              newNotificationId = undefined;
+              newNotificationId = undefined; 
               if (newNotificationId !== task.notificationId) {
-                  tasksNeedSavingToFirestore = true;
-                  firestore().collection(tasksCollectionPath).doc(task.id).update({ notificationId: newNotificationId }).catch(e => console.error("Error clearing notificationId in Firestore:", e));
+                  firestore().collection(tasksCollectionPath).doc(task.id).update({ notificationId: null }).catch(e => console.error("Error clearing notificationId in Firestore:", e));
               }
             }
-          } else if (task.notificationId) { // Task inactive or notifications disabled, cancel existing
+          } else if (task.notificationId) { 
             cancelTaskNotification(task.id);
-            newNotificationId = undefined;
+            newNotificationId = undefined; 
             if (newNotificationId !== task.notificationId) {
-                tasksNeedSavingToFirestore = true;
-                firestore().collection(tasksCollectionPath).doc(task.id).update({ notificationId: newNotificationId }).catch(e => console.error("Error clearing notificationId in Firestore:", e));
+                firestore().collection(tasksCollectionPath).doc(task.id).update({ notificationId: null }).catch(e => console.error("Error clearing notificationId in Firestore:", e));
             }
           }
           return { ...task, notificationId: newNotificationId };
@@ -269,39 +242,30 @@ const TaskListScreen = () => {
       console.log("TaskListScreen: Unsubscribing from Firestore listener.");
       unsubscribe();
     };
-  }, [userId, getTasksCollectionPathForUser, loadAppSettings]); // Re-run if userId or collection path changes
+  }, [userId, loadAppSettings]); 
 
 
-  // Handle task updates from other screens (e.g., AddTaskScreen, TaskDetailScreen)
-  // This effect might become less critical if all mutations are directly to Firestore
-  // and the onSnapshot listener handles UI updates. However, it's good for immediate feedback.
   useEffect(() => {
     const { updatedTask, completedTaskId, newTask, deletedTaskId, refresh } = route.params || {};
     
-    if (refresh) { // If a full refresh is requested (e.g., after clearing all data)
-        // The Firestore listener should automatically refresh, but this ensures isLoading is handled.
-        // No direct action needed here if listener is robust.
+    if (refresh) { 
         navigation.setParams({ refresh: undefined });
     }
-
-    // The Firestore listener should handle these changes automatically.
-    // If direct manipulation of local state is still desired for immediate UI feedback
-    // before Firestore syncs, that logic could be here, but it adds complexity.
-    // For now, relying on Firestore's real-time updates.
     if (updatedTask || newTask || deletedTaskId) {
         console.log("TaskListScreen: Route params received, relying on Firestore listener for updates.", route.params);
-        // Clear params to prevent re-processing
         navigation.setParams({ updatedTask: undefined, completedTaskId: undefined, newTask: undefined, deletedTaskId: undefined });
     }
 
   }, [route.params, navigation]);
 
 
-  // Toggle task active state (now updates Firestore)
+  // Toggle task active state
   const handleToggleActive = async (taskIdToToggle: string, currentIsActive: boolean) => {
-    if (!userId) return;
-    const tasksCollectionPath = getTasksCollectionPathForUser();
-    if (!tasksCollectionPath) return;
+    const tasksCollectionPath = getTasksCollectionPathForUser(userId, (typeof __app_id !== 'undefined' ? __app_id : undefined));
+    if (!userId || !tasksCollectionPath) {
+        console.warn("TaskListScreen: tasksCollectionPath is null, cannot toggle active state.");
+        return;
+    }
 
     const taskToUpdate = tasks.find(t => t.id === taskIdToToggle);
     if (!taskToUpdate) return;
@@ -309,49 +273,46 @@ const TaskListScreen = () => {
     const updatedIsActive = !currentIsActive;
     let newNotificationId: number | undefined | null = taskToUpdate.notificationId;
 
-    // Update notification based on new active state
-    if (updatedIsActive) { // Task is being activated
+    if (updatedIsActive) { 
         if (enableNotificationsSetting && taskToUpdate.nextDue.getTime() > Date.now()) {
-            if (taskToUpdate.notificationId) cancelTaskNotification(taskToUpdate.id); // Cancel old, if any
+            if (taskToUpdate.notificationId) cancelTaskNotification(taskToUpdate.id);
             newNotificationId = scheduleNotification(taskToUpdate, taskToUpdate.nextDue, true);
             console.log(`Task ${taskToUpdate.name} activated, scheduled notification ID: ${newNotificationId}`);
         } else if (enableNotificationsSetting) {
             console.log(`Task ${taskToUpdate.name} activated, but due date is past or notifications off. No new notification scheduled.`);
-             if (taskToUpdate.notificationId) { // If it had one, clear it
+             if (taskToUpdate.notificationId) { 
                 cancelTaskNotification(taskToUpdate.id);
-                newNotificationId = undefined;
+                newNotificationId = null; 
              }
         }
-    } else { // Task is being deactivated
+    } else { 
         if (taskToUpdate.notificationId) {
             cancelTaskNotification(taskToUpdate.id);
             console.log(`Task ${taskToUpdate.name} deactivated, cancelled notification ID: ${taskToUpdate.notificationId}`);
         }
-        newNotificationId = undefined;
+        newNotificationId = null; 
     }
 
     try {
       await firestore().collection(tasksCollectionPath).doc(taskIdToToggle).update({
         isActive: updatedIsActive,
-        notificationId: newNotificationId, // Store the numeric ID or null/undefined
-        // updatedAt: firestore.FieldValue.serverTimestamp(), // Good practice
+        notificationId: newNotificationId, 
       });
       console.log(`TaskListScreen: Task ${taskIdToToggle} active state updated in Firestore to ${updatedIsActive}. Notification ID: ${newNotificationId}`);
-      // UI will update via onSnapshot listener
     } catch (error) {
       console.error("TaskListScreen: Error toggling task active state in Firestore:", error);
       Alert.alert("Error", "Could not update task status.");
     }
   };
 
-  // Priority style helper (remains the same)
+  // Priority style helper
   const getPriorityStyle = (priority: AirdropTask['priority']) => {
     if (priority === 'high') return { borderLeftColor: colorMap['border-l-red-500'] || '#EF4444', borderLeftWidth: 5 };
     if (priority === 'medium') return { borderLeftColor: colorMap['border-l-yellow-500'] || '#F59E0B', borderLeftWidth: 5 };
     return { borderLeftColor: colorMap['border-l-green-500'] || '#10B981', borderLeftWidth: 5 };
   };
 
-  // Theme styles (remains the same)
+  // Theme styles
   const themeStyles = {
     containerBg: isDarkMode ? '#1A202C' : '#F7FAFC',
     cardBg: isDarkMode ? '#2D3748' : '#FFFFFF',
@@ -375,14 +336,14 @@ const TaskListScreen = () => {
     categoryButtonBorder: isDarkMode ? '#374151' : '#D1D5DB',
   };
 
-  // Render task item (remains largely the same, Switch now calls updated handleToggleActive)
+  // Render task item
   const renderItem = ({ item }: { item: AirdropTask }) => (
     <View style={!item.isActive && { opacity: 0.6 }}>
       <TouchableOpacity
         style={[ styles.taskItem, { backgroundColor: themeStyles.cardBg }, getPriorityStyle(item.priority) ]}
         onPress={() => navigation.navigate('TaskDetail', { taskId: item.id, taskName: item.name })}
         disabled={!item.isActive && !listSettings.showInactive} >
-        <View style={styles.taskColorIndicatorContainer}><View style={[styles.taskColorIndicator, { backgroundColor: colorMap[item.color] || themeStyles.textSecondary }]} /></View>
+        <View style={styles.taskColorIndicatorContainer}><View style={[styles.taskColorIndicator, { backgroundColor: colorMap[item.color || 'bg-gray-500'] || themeStyles.textSecondary }]} /></View>
         <View style={styles.taskInfo}>
           <Text style={[styles.taskName, { color: themeStyles.textPrimary }]}>{item.name}</Text>
           <Text style={[styles.taskDescription, { color: themeStyles.textSecondary }]} numberOfLines={2}>{item.description}</Text>
@@ -399,16 +360,16 @@ const TaskListScreen = () => {
                 onValueChange={() => handleToggleActive(item.id, item.isActive)}
                 value={item.isActive}
                 style={{ transform: [{ scaleX: 0.8 }, { scaleY: 0.8 }] }} />
-            <Text style={{ color: themeStyles.chevronColor, marginLeft: 8 }}>&gt;</Text>
+            <Text style={{ color: themeStyles.chevronColor, marginLeft: 8, fontSize: 20 }}>❯</Text>
         </View>
       </TouchableOpacity>
     </View>
   );
 
-  // Priority order for sorting (remains the same)
-  const priorityOrder = { low: 3, medium: 2, high: 1 };
+  // Priority order for sorting
+  const priorityOrder: Record<AirdropTask['priority'], number> = { low: 3, medium: 2, high: 1 };
 
-  // Filtered and sorted tasks logic (remains the same)
+  // Filtered and sorted tasks logic
   const filteredAndSortedTasks = useMemo(() => {
     const lowercasedQuery = searchQuery.toLowerCase();
     let processedTasks = tasks.filter(task => {
@@ -434,8 +395,8 @@ const TaskListScreen = () => {
     return processedTasks;
   }, [tasks, listSettings.showInactive, searchQuery, listSettings.sortBy, listSettings.sortOrder, listSettings.selectedCategory]);
 
-  // Loading state UI (remains the same)
-  if (isLoading && tasks.length === 0 && userId) { // Show loading only if user is logged in and no tasks yet
+  // Loading state UI
+  if (isLoading && tasks.length === 0 && userId) { 
     return (
       <View style={[styles.loaderContainer, { backgroundColor: themeStyles.containerBg }]}>
         <ActivityIndicator size="large" color={themeStyles.loaderColor} />
@@ -444,18 +405,17 @@ const TaskListScreen = () => {
     );
   }
 
-  if (!userId && !isLoading) { // If no user and not loading, prompt for login or show message
+  if (!userId && !isLoading) { 
       return (
           <View style={[styles.loaderContainer, { backgroundColor: themeStyles.containerBg }]}>
               <Text style={[styles.loadingText, {color: themeStyles.textSecondary, textAlign: 'center'}]}>
                   Please sign in to manage your tasks.
               </Text>
-              {/* Optionally, add a sign-in button here if navigation to auth screen is not automatic */}
           </View>
       );
   }
 
-  // Sort controls logic (remains the same)
+  // Sort controls logic
   const cycleSortOrder = () => setListSettings(prev => ({...prev, sortOrder: prev.sortOrder === 'asc' ? 'desc' : 'asc'}));
   const cycleSortBy = () => {
     const criteria: SortCriteria[] = ['nextDue', 'name', 'priority', 'streak'];
@@ -468,7 +428,7 @@ const TaskListScreen = () => {
       return `${labels[listSettings.sortBy]} (${listSettings.sortOrder === 'asc' ? '▲' : '▼'})`;
   }
 
-  // Main component render (remains largely the same structure)
+  // Main component render
   return (
     <View style={[styles.container, { backgroundColor: themeStyles.containerBg }]}>
       <View style={styles.controlsContainer}>
@@ -501,8 +461,7 @@ const TaskListScreen = () => {
         data={filteredAndSortedTasks} renderItem={renderItem} keyExtractor={item => item.id}
         ListEmptyComponent={ <View style={styles.emptyContainer}><Text style={[styles.emptyText, {color: themeStyles.textSecondary}]}>{searchQuery || listSettings.selectedCategory !== ALL_CATEGORIES_KEY ? "No tasks match current filters." : (listSettings.showInactive && tasks.length > 0 && filteredAndSortedTasks.length === 0 ? "No inactive tasks." : (userId ? "No tasks yet. Add some!" : "Please sign in."))}</Text>{!searchQuery && listSettings.selectedCategory === ALL_CATEGORIES_KEY && !listSettings.showInactive && tasks.length === 0 && userId && (<Text style={[styles.emptySubText, {color: themeStyles.textTertiary}]}>Tap the '+' button to add your first airdrop task!</Text>)}</View> }
         contentContainerStyle={filteredAndSortedTasks.length === 0 ? styles.emptyFlatlistContent : {paddingBottom: 80}}
-        // onRefresh={() => { if (userId) { /* Firestore handles refresh via listener */ setIsLoading(true); /* Potentially force re-fetch if needed */ } }} // onRefresh might not be needed with Firestore listener
-        refreshing={isLoading && tasks.length > 0} // Show refreshing indicator if loading new data while some tasks are already displayed
+        refreshing={isLoading && tasks.length > 0} 
         keyboardShouldPersistTaps="handled" />
       <TouchableOpacity style={[styles.addButton, {backgroundColor: themeStyles.fabBg}]} onPress={() => navigation.navigate('AddTask', {})} activeOpacity={0.7} >
         <Text style={styles.addButtonText}>+</Text>
@@ -511,7 +470,7 @@ const TaskListScreen = () => {
   );
 };
 
-// Styles (remain the same)
+// Styles
 const styles = StyleSheet.create({
   container: { flex: 1 },
   controlsContainer: { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 4, borderBottomWidth: 1, borderBottomColor: 'rgba(128,128,128,0.2)'},
@@ -534,7 +493,7 @@ const styles = StyleSheet.create({
   taskDescription: { fontSize: 13, marginBottom: 6 },
   taskMeta: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 },
   taskMetaText: { fontSize: 11, fontWeight: '500' },
-  taskActions: { flexDirection: 'row', alignItems: 'center', marginLeft: 'auto' }, // Changed from marginLeft: 10
+  taskActions: { flexDirection: 'row', alignItems: 'center', marginLeft: 'auto' }, 
   emptyContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 20, marginTop: '30%' },
   emptyText: { fontSize: 18, fontWeight: '600', textAlign: 'center', marginBottom: 8 },
   emptySubText: { fontSize: 14, textAlign: 'center' },

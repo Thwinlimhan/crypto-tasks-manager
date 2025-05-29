@@ -1,7 +1,7 @@
 // File: project-root/mobile/screens/TaskDetailScreen.tsx
 // Description: This screen displays detailed information for a selected airdrop task,
-// allowing users to view steps, mark tasks as complete, and delete tasks.
-// It is now integrated with Firebase Firestore for data operations.
+// allowing users to view steps (now including descriptions), mark tasks as complete, and delete tasks.
+// It is integrated with Firebase Firestore for data operations.
 
 import React, { useState, useEffect, useCallback } from 'react';
 import {
@@ -27,23 +27,23 @@ import type { AirdropTask, TaskStep, RootStackParamList } from '../types';
 import { useTheme } from '../ThemeContext';
 // Import NotificationManager functions
 import { scheduleNotification, cancelTaskNotification } from '../NotificationManager';
+// Import Firestore helper
+import { getTasksCollectionPathForUser } from '../utils/firestoreHelper'; 
 
 // AsyncStorage for settings (still needed for local app preferences)
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Constants
-const TASKS_COLLECTION_BASE_PATH = 'artifacts';
-const APP_ID_PLACEHOLDER = 'crypto-airdrop-manager-mobile'; // Replace if dynamic
 const SETTINGS_STORAGE_KEY = 'airdrop-app-settings';
 
-// Helper to map Tailwind-like colors (remains the same)
+// Helper to map Tailwind-like colors
 const colorMap: { [key: string]: string } = {
   'bg-blue-500': '#3B82F6', 'bg-purple-500': '#8B5CF6', 'bg-green-500': '#10B981',
   'bg-red-500': '#EF4444', 'bg-yellow-500': '#F59E0B', 'bg-pink-500': '#EC4899',
   'bg-teal-500': '#14B8A6', 'bg-indigo-500': '#6366F1', 'bg-gray-500': '#6B7280',
 };
 
-// Edit Icon (remains the same)
+// Edit Icon
 const EditIcon = ({ color }: { color: string }) => (
   <Text style={{ color: color, fontSize: Platform.OS === 'ios' ? 20 : 22, fontWeight: 'normal', marginRight: Platform.OS === 'ios' ? 0 : 5 }}>
     ✎
@@ -63,17 +63,12 @@ const TaskDetailScreen = () => {
   const [task, setTask] = useState<AirdropTask | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [isCompleting, setIsCompleting] = useState(false); // Separate loading state for completion
-  const [currentSteps, setCurrentSteps] = useState<TaskStep[]>([]); // For interactive step checking
+  const [isCompleting, setIsCompleting] = useState(false);
+  const [currentSteps, setCurrentSteps] = useState<TaskStep[]>([]);
   const [enableNotificationsSetting, setEnableNotificationsSetting] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const current_app_id = typeof __app_id !== 'undefined' ? __app_id : undefined;
 
-  // Get tasks collection path
-  const getTasksCollectionPathForUser = useCallback(() => {
-    if (!userId) return null;
-    const appId = typeof __app_id !== 'undefined' ? __app_id : APP_ID_PLACEHOLDER;
-    return `${TASKS_COLLECTION_BASE_PATH}/${appId}/users/${userId}/airdropTasks_mobile`;
-  }, [userId]);
 
   // Auth state listener
   useEffect(() => {
@@ -82,7 +77,7 @@ const TaskDetailScreen = () => {
         setUserId(currentUser.uid);
       } else {
         setUserId(null);
-        setTask(null); // Clear task if user logs out
+        setTask(null); 
         Alert.alert("Authentication Error", "You have been signed out.", [{ text: "OK", onPress: () => navigation.navigate('TaskList') }]);
       }
     });
@@ -109,11 +104,11 @@ const TaskDetailScreen = () => {
   useEffect(() => {
     if (!userId || !taskId) {
       setIsLoading(false);
-      if (!taskId && userId) navigation.goBack(); // If taskId is missing but user is logged in, go back
+      if (!taskId && userId) navigation.goBack(); 
       return;
     }
 
-    const tasksCollectionPath = getTasksCollectionPathForUser();
+    const tasksCollectionPath = getTasksCollectionPathForUser(userId, current_app_id);
     if (!tasksCollectionPath) {
         setIsLoading(false);
         Alert.alert("Error", "User not identified. Cannot load task details.");
@@ -127,7 +122,7 @@ const TaskDetailScreen = () => {
     const docRef = firestore().collection(tasksCollectionPath).doc(taskId);
     const unsubscribe = docRef.onSnapshot(docSnapshot => {
       if (docSnapshot.exists) {
-        const taskData = docSnapshot.data() as any;
+        const taskData = docSnapshot.data() as any; 
         const fetchedTask: AirdropTask = {
           id: docSnapshot.id,
           ...taskData,
@@ -136,8 +131,7 @@ const TaskDetailScreen = () => {
           steps: Array.isArray(taskData.steps) ? taskData.steps.sort((a: TaskStep, b: TaskStep) => a.order - b.order) : [],
         };
         setTask(fetchedTask);
-        // Initialize currentSteps for UI interaction, preserving their completion state from fetched task
-        setCurrentSteps(fetchedTask.steps.map(s => ({ ...s })));
+        setCurrentSteps(fetchedTask.steps.map(s => ({ ...s, description: s.description || '' }))); // Ensure description is string
         console.log(`TaskDetailScreen: Task "${fetchedTask.name}" updated from Firestore.`);
       } else {
         console.warn(`TaskDetailScreen: Task with ID ${taskId} not found in Firestore.`);
@@ -156,7 +150,7 @@ const TaskDetailScreen = () => {
       console.log(`TaskDetailScreen: Unsubscribing from Firestore listener for task ID: ${taskId}`);
       unsubscribe();
     };
-  }, [userId, taskId, navigation, getTasksCollectionPathForUser]);
+  }, [userId, taskId, navigation, current_app_id]);
 
 
   // Update navigation options when task data is loaded
@@ -179,7 +173,7 @@ const TaskDetailScreen = () => {
     }
   }, [task, navigation, isDarkMode, isDeleting, isLoading, isCompleting]);
 
-  // Toggle step completion in local state (for UI interaction)
+  // Toggle step completion in local state
   const toggleStepCompletion = (stepId: string) => {
     setCurrentSteps(prevSteps =>
       prevSteps.map(step =>
@@ -188,11 +182,11 @@ const TaskDetailScreen = () => {
     );
   };
 
-  // Calculate next due date (helper, remains the same)
+  // Calculate next due date
   const calculateNextDueDate = (startDate: Date, taskInterval: AirdropTask['interval']): Date => {
     const nextDue = new Date(startDate);
     if (taskInterval !== 'hourly') {
-        nextDue.setHours(0, 0, 0, 0); // Reset time for daily+ intervals
+        nextDue.setHours(0, 0, 0, 0); 
     }
     switch (taskInterval) {
       case 'hourly': nextDue.setHours(startDate.getHours() + 1); break;
@@ -223,51 +217,46 @@ const TaskDetailScreen = () => {
   };
 
   const completeTaskLogic = async () => {
-    if (!task || !userId) return; // Should be redundant due to outer check
-    setIsCompleting(true);
-
-    const tasksCollectionPath = getTasksCollectionPathForUser();
-    if (!tasksCollectionPath) {
-        setIsCompleting(false);
-        Alert.alert("Error", "Cannot complete task. User path is missing.");
+    const tasksCollectionPath = getTasksCollectionPathForUser(userId, current_app_id);
+    if (!task || !userId || !tasksCollectionPath) {
+        Alert.alert("Error", "Cannot complete task. User or path error.");
         return;
-    }
+    } 
+    setIsCompleting(true);
 
     const now = new Date();
     const newNextDueDate = calculateNextDueDate(now, task.interval);
     
-    const updatedTaskData = {
-      lastCompleted: firestore.Timestamp.fromDate(now),
-      nextDue: firestore.Timestamp.fromDate(newNextDueDate),
-      streak: firestore.FieldValue.increment(1),
-      steps: task.steps.map(step => ({ ...step, isCompleted: false })), // Reset steps for next cycle
+    const updatedTaskData: Partial<AirdropTask> & { updatedAt: any, notificationId: number | null } = { 
+      lastCompleted: firestore.Timestamp.fromDate(now) as any, 
+      nextDue: firestore.Timestamp.fromDate(newNextDueDate) as any, 
+      streak: firestore.FieldValue.increment(1) as any, 
+      steps: task.steps.map(step => ({ ...step, isCompleted: false })), 
       updatedAt: firestore.FieldValue.serverTimestamp(),
-      notificationId: null, // Will be updated after scheduling
+      notificationId: null, 
     };
 
     let newNotificationId: number | null = null;
-    // Prepare task object for notification scheduling (needs JS Dates)
     const taskForNotification: AirdropTask = {
         ...task,
         lastCompleted: now,
         nextDue: newNextDueDate,
-        streak: (task.streak || 0) + 1, // Use incremented streak for notification message if needed
+        streak: (task.streak || 0) + 1, 
     };
 
     if (task.notificationId) {
-      cancelTaskNotification(task.id); // Cancel old notification using task ID
+      cancelTaskNotification(task.id); 
     }
     if (task.isActive && enableNotificationsSetting && newNextDueDate.getTime() > Date.now()) {
       newNotificationId = scheduleNotification(taskForNotification, newNextDueDate, true);
     }
-    (updatedTaskData as any).notificationId = newNotificationId ?? null;
+    updatedTaskData.notificationId = newNotificationId ?? null;
 
 
     try {
       await firestore().collection(tasksCollectionPath).doc(task.id).update(updatedTaskData);
       Alert.alert("Task Complete!", `${task.name} has been marked as complete.`);
-      // Navigation back to TaskList, which will show updated data via its own listener
-      navigation.navigate('TaskList', { refresh: true }); // Pass refresh to ensure list updates if listener is slow
+      navigation.navigate('TaskList', { refresh: true }); 
     } catch (e) {
       console.error('TaskDetailScreen: Failed to complete task in Firestore:', e);
       Alert.alert('Error', 'Could not update task in Firestore.');
@@ -278,7 +267,8 @@ const TaskDetailScreen = () => {
 
   // Handle task deletion
   const handleDeleteTask = async () => {
-    if (!task || isLoading || isCompleting || !userId) return;
+    const tasksCollectionPath = getTasksCollectionPathForUser(userId, current_app_id);
+    if (!task || isLoading || isCompleting || !userId || !tasksCollectionPath) return;
 
     Alert.alert(
       "Delete Task",
@@ -290,15 +280,9 @@ const TaskDetailScreen = () => {
           style: "destructive",
           onPress: async () => {
             setIsDeleting(true);
-            const tasksCollectionPath = getTasksCollectionPathForUser();
-            if (!tasksCollectionPath) {
-                setIsDeleting(false);
-                Alert.alert("Error", "Cannot delete task. User path is missing.");
-                return;
-            }
             try {
               if (task.notificationId) {
-                cancelTaskNotification(task.id); // Cancel notification using task ID
+                cancelTaskNotification(task.id); 
               }
               await firestore().collection(tasksCollectionPath).doc(task.id).delete();
               Alert.alert("Task Deleted", `"${task.name}" has been deleted.`);
@@ -315,7 +299,7 @@ const TaskDetailScreen = () => {
     );
   };
 
-  // Theme styles (remains the same)
+  // Theme styles
   const themeStyles = {
     containerBg: isDarkMode ? '#1F2937' : '#EDF2F7',
     cardBg: isDarkMode ? '#2D3748' : '#FFFFFF',
@@ -328,10 +312,11 @@ const TaskDetailScreen = () => {
     actionButtonCompleteBg: isDarkMode ? '#2B6CB0' : '#3182CE',
     actionButtonDeleteBg: isDarkMode ? '#C53030' : '#E53E3E',
     loaderColor: isDarkMode ? '#FFFFFF' : '#1D4ED8',
+    stepDescriptionText: isDarkMode ? '#BCCCDC' : '#5A6578', // Lighter secondary for dark, darker for light
   };
 
   // Loading UI
-  if (isLoading && !task) { // Show main loader only if task is not yet loaded
+  if (isLoading && !task) { 
     return (
       <View style={[styles.loaderContainer, { backgroundColor: themeStyles.containerBg }]}>
         <ActivityIndicator size="large" color={themeStyles.loaderColor} />
@@ -340,7 +325,7 @@ const TaskDetailScreen = () => {
     );
   }
   
-  if (!task) { // If task is null after loading attempt (e.g., due to error or deletion)
+  if (!task) { 
       return (
           <View style={[styles.loaderContainer, { backgroundColor: themeStyles.containerBg }]}>
               <Text style={[styles.loadingText, {color: themeStyles.textSecondary}]}>Task data not available or user not signed in.</Text>
@@ -355,7 +340,7 @@ const TaskDetailScreen = () => {
         contentContainerStyle={{ paddingBottom: 20 }} >
       <View style={[styles.card, { backgroundColor: themeStyles.cardBg }]}>
         <View style={styles.headerSection}>
-            <View style={[styles.colorIndicator, { backgroundColor: colorMap[task.color] || themeStyles.textSecondary }]} />
+            <View style={[styles.colorIndicator, { backgroundColor: colorMap[task.color || 'bg-gray-500'] || themeStyles.textSecondary }]} />
             <Text style={[styles.taskName, { color: themeStyles.textPrimary }]}>{task.name}</Text>
         </View>
         {task.description && <Text style={[styles.description, { color: themeStyles.textSecondary }]}>{task.description}</Text>}
@@ -380,19 +365,28 @@ const TaskDetailScreen = () => {
                 style={[styles.stepItem, index === currentSteps.length -1 ? {} : { borderBottomWidth: 1, borderBottomColor: themeStyles.separatorColor } ]} 
                 onPress={() => toggleStepCompletion(step.id)} 
                 activeOpacity={0.7} 
-                disabled={isLoading || isDeleting || isCompleting} // Disable while any operation is in progress
+                disabled={isLoading || isDeleting || isCompleting} 
             >
-              <View style={[styles.stepCheckbox, {borderColor: step.isCompleted ? themeStyles.stepCompletedColor : themeStyles.stepPendingColor }]}>{step.isCompleted && <View style={[styles.stepCheckboxInner, {backgroundColor: themeStyles.stepCompletedColor}]} />}</View>
-              <Text style={[styles.stepText, { color: step.isCompleted ? themeStyles.textTertiary : themeStyles.textPrimary, textDecorationLine: step.isCompleted ? 'line-through' : 'none'}]}>{step.order}. {step.title}</Text>
+              <View style={styles.stepContent}>
+                <View style={styles.stepTitleRow}>
+                    <View style={[styles.stepCheckbox, {borderColor: step.isCompleted ? themeStyles.stepCompletedColor : themeStyles.stepPendingColor }]}>{step.isCompleted && <View style={[styles.stepCheckboxInner, {backgroundColor: themeStyles.stepCompletedColor}]} />}</View>
+                    <Text style={[styles.stepText, { color: step.isCompleted ? themeStyles.textTertiary : themeStyles.textPrimary, textDecorationLine: step.isCompleted ? 'line-through' : 'none'}]}>{step.order}. {step.title}</Text>
+                </View>
+                {step.description && step.description.trim() !== '' && (
+                    <Text style={[styles.stepDescription, { color: themeStyles.stepDescriptionText, textDecorationLine: step.isCompleted ? 'line-through' : 'none' }]}>
+                        {step.description}
+                    </Text>
+                )}
+              </View>
             </TouchableOpacity>
           ))}
         </View>
       )}
 
       <TouchableOpacity 
-        style={[styles.actionButton, styles.completeButton, { backgroundColor: themeStyles.actionButtonCompleteBg, opacity: (isLoading || isDeleting || isCompleting) ? 0.5 : 1 }]} 
+        style={[styles.actionButton, styles.completeButton, { backgroundColor: themeStyles.actionButtonCompleteBg, opacity: (isLoading || isDeleting || isCompleting || !task.isActive) ? 0.5 : 1 }]} 
         onPress={handleCompleteTask} 
-        disabled={isLoading || isDeleting || isCompleting}
+        disabled={isLoading || isDeleting || isCompleting || !task.isActive} 
       >
         {isCompleting ? <ActivityIndicator color="#FFFFFF" size="small" /> : <Text style={styles.actionButtonText}>Mark Task as Complete</Text>}
       </TouchableOpacity>
@@ -408,7 +402,7 @@ const TaskDetailScreen = () => {
   );
 };
 
-// Styles (remain the same)
+// Styles
 const styles = StyleSheet.create({
   container: { flex: 1 },
   loaderContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 20, },
@@ -423,10 +417,14 @@ const styles = StyleSheet.create({
   metaLabel: { fontSize: 13, marginBottom: 3 },
   metaValue: { fontSize: 15, fontWeight: '500' },
   stepsHeader: { fontSize: 18, fontWeight: '600', marginBottom: 12 },
-  stepItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12 },
+  stepItem: { paddingVertical: 12 }, // Removed flexDirection: 'row' to allow description below
+  stepContent: { flexDirection: 'column' }, // New container for title row and description
+  stepTitleRow: { flexDirection: 'row', alignItems: 'center' }, // Existing row for checkbox and title
   stepCheckbox: { width: 22, height: 22, borderRadius: 4, borderWidth: 2, justifyContent: 'center', alignItems: 'center', marginRight: 12 },
   stepCheckboxInner: { width: 12, height: 12, borderRadius: 2 },
   stepText: { fontSize: 16, flex: 1 },
+  stepDescription: { fontSize: 13, marginLeft: 34, // Align with title (checkbox width + margin)
+    marginTop: 4, fontStyle: 'italic', opacity: 0.8 },
   actionButton: { marginHorizontal: 12, marginTop: 15, paddingVertical: 15, borderRadius: 8, alignItems: 'center', justifyContent: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 2, elevation: 4 },
   actionButtonText: { color: '#FFFFFF', fontSize: 17, fontWeight: '600' },
   completeButton: {},

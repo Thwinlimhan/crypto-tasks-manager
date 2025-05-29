@@ -1,6 +1,3 @@
-// File: project-root/package.json
-// This is the main package.json for the Electron desktop application.
-// It also includes scripts to build the web app.
 {
   "name": "airdrop-manager-desktop",
   "version": "1.0.0",
@@ -8,7 +5,7 @@
   "main": "electron/main.js",
   "author": "Airdrop Manager Team",
   "license": "MIT",
-  "homepage": "./",
+  "homepage": "http://./",
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
@@ -60,12 +57,36 @@
     },
     "linux": {
       "target": [
-        { "target": "AppImage", "arch": ["x64"] },
-        { "target": "deb", "arch": ["x64"] },
-        { "target": "rpm", "arch": ["x64"] }
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "rpm",
+          "arch": [
+            "x64"
+          ]
+        }
       ],
       "category": "Office;Utility;",
       "icon": "electron/assets"
     }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thwinlimhan/crypto-tasks-manager.git"
+  },
+  "keywords": [],
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/thwinlimhan/crypto-tasks-manager/issues"
   }
 }

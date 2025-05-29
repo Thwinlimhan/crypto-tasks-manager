@@ -1,211 +1,98 @@
 // File: project-root/mobile/App.tsx
-// Description: Main entry point for the React Native application.
-// Initializes Firebase, sets up navigation, theme, and global providers.
+// Main application component for the mobile app.
+// Sets up navigation, theme, and global notification handling including deep linking.
+// Added a loading indicator during auth state check.
 
-import React, { useState, useEffect } from 'react';
-import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
+import React, { useEffect, useRef, useState } from 'react'; // Added useState
+import { NavigationContainer, NavigationContainerRef, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { StatusBar, TouchableOpacity, Text, Platform, View, ActivityIndicator, Alert } from 'react-native';
-
-// Firebase
-import firebase from '@react-native-firebase/app'; // Core app
-import auth, { FirebaseAuthTypes } from '@react-native-firebase/auth'; // Auth module
-
-// Push Notifications
+import { Platform, AppState, AppStateStatus, View, Text, ActivityIndicator, StyleSheet } from 'react-native'; // Added View, Text, ActivityIndicator, StyleSheet
+import PushNotification, { ReceivedNotification } from 'react-native-push-notification';
 import PushNotificationIOS from '@react-native-community/push-notification-ios';
-import PushNotification from 'react-native-push-notification';
 
-// Screen components
+// Import screens
 import TaskListScreen from './screens/TaskListScreen';
-import TaskDetailScreen from './screens/TaskDetailScreen';
 import AddTaskScreen from './screens/AddTaskScreen';
+import TaskDetailScreen from './screens/TaskDetailScreen';
 import SettingsScreen from './screens/SettingsScreen';
-// Placeholder for AuthScreen - you would create this screen
-// import AuthScreen from './screens/AuthScreen'; 
+import AuthScreen from './screens/AuthScreen';
 
-// Shared types
+// Import types
 import type { RootStackParamList } from './types';
 
-// Theme context
+// Import Theme Provider and hook
 import { ThemeProvider, useTheme } from './ThemeContext';
+
+// Import Notification Manager configuration
+import { configureNotifications, generateNumericNotificationId } from './NotificationManager';
+
+// Firebase
+import auth from '@react-native-firebase/auth';
+import messaging from '@react-native-firebase/messaging'; // For potential future FCM
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
-// Notification Channel ID (Android)
-const NOTIFICATION_CHANNEL_ID = "airdrop-task-reminders"; // Ensure this matches NotificationManager.ts
+const navigationRef = React.createRef<NavigationContainerRef<RootStackParamList>>();
 
-// Simple Gear Icon (retained)
-const SettingsIcon = ({ color }: { color: string }) => (
-  <Text style={{ color: color, fontSize: Platform.OS === 'ios' ? 22 : 24, marginRight: Platform.OS === 'ios' ? 0 : 5, fontWeight: 'bold' }}>
-    ⚙
-  </Text>
-);
+function navigateToTaskDetail(taskId: string, taskName?: string) {
+  if (navigationRef.isReady()) {
+    console.log(`App: Navigating to TaskDetail for taskId: ${taskId}`);
+    navigationRef.navigate('TaskDetail', { taskId, taskName: taskName || "Task Details" });
+  } else {
+    console.warn("App: Navigation not ready, cannot deep link to task yet.");
+    setTimeout(() => {
+        if (navigationRef.isReady()) {
+            navigationRef.navigate('TaskDetail', { taskId, taskName: taskName || "Task Details" });
+        } else {
+            console.error("App: Navigation still not ready after delay for deep link.");
+        }
+    }, 1000); 
+  }
+}
 
-// Custom theme objects (retained)
-const LightAppTheme = {
-  ...DefaultTheme,
-  colors: {
-    ...DefaultTheme.colors,
-    primary: '#3182CE', background: '#F3F4F6', card: '#FFFFFF',
-    text: '#111827', border: '#E2E8F0', notification: '#EF4444',
-  },
-};
-const DarkAppTheme = {
-  ...DarkTheme,
-  colors: {
-    ...DarkTheme.colors,
-    primary: '#60A5FA', background: '#111827', card: '#1F2937',
-    text: '#FFFFFF', border: '#374151', notification: '#F87171',
-  },
-};
-
-// Placeholder AuthScreen component - replace with your actual implementation
-const AuthScreenPlaceholder = ({ navigation }: { navigation: any }) => {
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [isLogin, setIsLogin] = useState(true);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState('');
+// Simple Loading Screen Component
+const LoadingScreen = () => {
     const { resolvedTheme } = useTheme();
-    const isDark = resolvedTheme === 'dark';
-
-    const handleAuth = async () => {
-        setLoading(true);
-        setError('');
-        try {
-            if (isLogin) {
-                await auth().signInWithEmailAndPassword(email, password);
-            } else {
-                await auth().createUserWithEmailAndPassword(email, password);
-            }
-            // Navigation to TaskList will be handled by onAuthStateChanged in AppMobile
-        } catch (e: any) {
-            setError(e.message);
-            console.error("Auth Error:", e);
-        } finally {
-            setLoading(false);
-        }
-    };
-    
-    const handleAnonymousSignIn = async () => {
-        setLoading(true);
-        setError('');
-        try {
-            await auth().signInAnonymously();
-        } catch (e: any) {
-            setError(e.message);
-            console.error("Anonymous Auth Error:", e);
-        } finally {
-            setLoading(false);
-        }
-    };
-
+    const isDarkMode = resolvedTheme === 'dark';
     return (
-        <View style={{ flex: 1, justifyContent: 'center', padding: 20, backgroundColor: isDark ? '#111827' : '#F3F4F6' }}>
-            <Text style={{ fontSize: 24, fontWeight: 'bold', textAlign: 'center', marginBottom: 20, color: isDark ? '#FFF' : '#000' }}>
-                {isLogin ? 'Login' : 'Sign Up'}
-            </Text>
-            <TextInput
-                placeholder="Email"
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                style={{ height: 40, borderColor: 'gray', borderWidth: 1, marginBottom: 10, paddingHorizontal: 10, borderRadius: 5, color: isDark ? '#FFF' : '#000', backgroundColor: isDark ? '#1F2937' : '#FFF' }}
-                placeholderTextColor={isDark ? '#777' : '#999'}
-            />
-            <TextInput
-                placeholder="Password"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-                style={{ height: 40, borderColor: 'gray', borderWidth: 1, marginBottom: 20, paddingHorizontal: 10, borderRadius: 5, color: isDark ? '#FFF' : '#000', backgroundColor: isDark ? '#1F2937' : '#FFF' }}
-                placeholderTextColor={isDark ? '#777' : '#999'}
-            />
-            {error ? <Text style={{ color: 'red', textAlign: 'center', marginBottom: 10 }}>{error}</Text> : null}
-            <TouchableOpacity
-                onPress={handleAuth}
-                disabled={loading}
-                style={{ backgroundColor: '#3B82F6', padding: 15, borderRadius: 5, alignItems: 'center', marginBottom: 10, opacity: loading ? 0.7 : 1 }}
-            >
-                {loading ? <ActivityIndicator color="#FFF" /> : <Text style={{ color: '#FFF', fontWeight: 'bold' }}>{isLogin ? 'Login' : 'Sign Up'}</Text>}
-            </TouchableOpacity>
-            <TouchableOpacity
-                onPress={() => setIsLogin(!isLogin)}
-                style={{ padding: 10, alignItems: 'center', marginBottom: 10 }}
-            >
-                <Text style={{ color: '#3B82F6' }}>
-                    {isLogin ? 'Need an account? Sign Up' : 'Have an account? Login'}
-                </Text>
-            </TouchableOpacity>
-             <TouchableOpacity
-                onPress={handleAnonymousSignIn}
-                disabled={loading}
-                style={{ backgroundColor: '#10B981', padding: 15, borderRadius: 5, alignItems: 'center', opacity: loading ? 0.7 : 1 }}
-            >
-                {loading ? <ActivityIndicator color="#FFF" /> : <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Continue Anonymously</Text>}
-            </TouchableOpacity>
+        <View style={[styles.loadingContainer, { backgroundColor: isDarkMode ? '#1A202C' : '#F7FAFC' }]}>
+            <ActivityIndicator size="large" color={isDarkMode ? '#FFFFFF' : '#1D4ED8'} />
+            <Text style={[styles.loadingText, { color: isDarkMode ? '#A0AEC0' : '#4A5568'}]}>Loading App...</Text>
         </View>
     );
 };
 
 
-const AppNavigator = () => {
+const AppContent = () => {
   const { resolvedTheme } = useTheme();
-  const navigationTheme = resolvedTheme === 'dark' ? DarkAppTheme : LightAppTheme;
-
-  const headerBackgroundColor = navigationTheme.colors.card;
-  const headerTintColor = navigationTheme.colors.text;
-
-  const [initializing, setInitializing] = useState(true);
-  const [user, setUser] = useState<FirebaseAuthTypes.User | null>(null);
-
-  // Handle user state changes
-  function onAuthStateChanged(currentUser: FirebaseAuthTypes.User | null) {
-    setUser(currentUser);
-    if (initializing) {
-      setInitializing(false);
-    }
-    console.log("AppNavigator: Auth state changed, user:", currentUser ? currentUser.uid : 'null');
-  }
+  const [initialRouteName, setInitialRouteName] = useState<'Auth' | 'TaskList'>('Auth');
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const appState = useRef(AppState.currentState);
 
   useEffect(() => {
-    // Ensure Firebase is initialized.
-    // This check is often done here or in a dedicated firebase.js/ts config file.
-    if (firebase.apps.length === 0) {
-        // If you have a firebaseConfig object (from your Firebase project settings)
-        // firebase.initializeApp(firebaseConfig); 
-        // For @react-native-firebase, usually, the native configuration (google-services.json / GoogleService-Info.plist)
-        // handles initialization automatically when the native modules load.
-        // However, it's good practice to ensure it's ready.
-        console.log("Firebase app initialized via native config.");
-    } else {
-        console.log("Firebase app already initialized.");
-    }
+    configureNotifications();
 
-    const authSubscriber = auth().onAuthStateChanged(onAuthStateChanged);
-    return authSubscriber; // unsubscribe on unmount
-  }, []);
-
-  useEffect(() => {
-    // Configure Push Notifications (moved from TaskListScreen to App.tsx for global setup)
     PushNotification.configure({
       onRegister: function (token) {
         console.log("NOTIFICATION TOKEN:", token);
       },
-      onNotification: function (notification) {
-        console.log("NOTIFICATION RECEIVED:", notification);
-        // Handle notification tap: navigate to task detail if taskId is present
-        if (notification.userInteraction && notification.data && notification.data.taskId) {
-            // This requires a way to access navigation prop here.
-            // One common way is to use a navigation ref at the root.
-            // For simplicity, we'll log, but ideally, you navigate.
-            console.log(`User tapped notification for task: ${notification.data.taskId}. Implement navigation.`);
-            // Example: navigationRef.current?.navigate('TaskDetail', { taskId: notification.data.taskId, taskName: notification.title });
+      onNotification: function (notification: Omit<ReceivedNotification, 'userInfo'> & { userInfo?: any, data?: any }) {
+        console.log("LOCAL NOTIFICATION OPENED (onNotification):", notification);
+        const isFromTaskManager = notification.data?.source === 'AirdropTaskManagerApp' || notification.userInfo?.source === 'AirdropTaskManagerApp';
+        if (isFromTaskManager) {
+            const taskId = notification.data?.taskId || notification.userInfo?.taskId;
+            const taskName = notification.data?.taskName || notification.userInfo?.taskName;
+            if (taskId) {
+                console.log(`App: Notification opened with taskId: ${taskId}`);
+                navigateToTaskDetail(taskId, taskName);
+            } else {
+                console.warn("App: Notification opened but taskId is missing in data/userInfo.");
+            }
+        } else {
+            console.log("App: Notification opened from unknown source or without task data.");
         }
         if (Platform.OS === 'ios') {
-            notification.finish(PushNotificationIOS.FetchResult.NoData);
+          notification.finish(PushNotificationIOS.FetchResult.NoData);
         }
       },
       onAction: function (notification) {
@@ -213,109 +100,91 @@ const AppNavigator = () => {
         console.log("NOTIFICATION:", notification);
       },
       onRegistrationError: function(err) {
-        console.error("Notification Registration Error:", err.message, err);
+        console.error("NOTIFICATION REGISTRATION ERROR:", err.message, err);
       },
       permissions: { alert: true, badge: true, sound: true },
-      popInitialNotification: true,
-      requestPermissions: Platform.OS === 'ios',
+      popInitialNotification: true, 
+      requestPermissions: Platform.OS === 'ios', 
     });
 
-    if (Platform.OS === 'android') {
-      PushNotification.createChannel(
-        {
-          channelId: NOTIFICATION_CHANNEL_ID,
-          channelName: "Task Reminders",
-          channelDescription: "Channel for Airdrop Task Reminders",
-          playSound: true,
-          soundName: "default",
-          importance: 4, // Importance.HIGH
-          vibrate: true,
-        },
-        (created) => console.log(`Notification channel '${NOTIFICATION_CHANNEL_ID}' created: ${created}`)
-      );
+    if (Platform.OS === 'ios') {
+      PushNotificationIOS.getInitialNotification().then(notification => {
+        if (notification) {
+          console.log('App: iOS Initial notification:', notification.getUserInfo());
+          const userInfo = notification.getUserInfo();
+           if (userInfo && userInfo.source === 'AirdropTaskManagerApp' && userInfo.taskId) {
+            console.log(`App: iOS app opened from killed state by notification for taskId: ${userInfo.taskId}`);
+            setTimeout(() => navigateToTaskDetail(userInfo.taskId, userInfo.taskName), 500);
+          }
+        }
+      });
     }
+
+    const subscriber = auth().onAuthStateChanged(user => {
+      if (user) {
+        setInitialRouteName('TaskList');
+      } else {
+        setInitialRouteName('Auth');
+      }
+      setIsAuthLoading(false);
+    });
+
+    const subscription = AppState.addEventListener("change", nextAppState => {
+        if (appState.current.match(/inactive|background/) && nextAppState === "active") {
+            console.log("App has come to the foreground!");
+            if (Platform.OS === 'ios') {
+                PushNotificationIOS.getApplicationIconBadgeNumber(num => {
+                    if (num > 0) PushNotificationIOS.setApplicationIconBadgeNumber(0);
+                });
+            }
+        }
+        appState.current = nextAppState;
+    });
+
+    return () => {
+        subscriber();
+        subscription.remove();
+    };
   }, []);
 
-
-  if (initializing) {
-    return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: navigationTheme.colors.background }}>
-        <ActivityIndicator size="large" color={navigationTheme.colors.primary} />
-        <Text style={{ marginTop: 10, color: navigationTheme.colors.text }}>Initializing App...</Text>
-      </View>
-    );
+  if (isAuthLoading) {
+    return <LoadingScreen />; // Display loading screen
   }
 
   return (
-    <NavigationContainer theme={navigationTheme}>
-      <StatusBar
-        barStyle={resolvedTheme === 'dark' ? 'light-content' : 'dark-content'}
-        backgroundColor={navigationTheme.colors.background} // Use background color from theme
-      />
-      <Stack.Navigator
-        screenOptions={{
-          headerStyle: { backgroundColor: headerBackgroundColor },
-          headerTintColor: headerTintColor,
-          headerTitleStyle: { fontWeight: 'bold' },
-        }}
-      >
-        {!user ? (
-          // User is not signed in
-          <Stack.Screen 
-            name="Auth" // Assuming you have an AuthScreen
-            component={AuthScreenPlaceholder} // Replace with your actual AuthScreen
-            options={{ title: 'Sign In / Sign Up', headerShown: false }} 
-          />
-        ) : (
-          // User is signed in
-          <>
-            <Stack.Screen
-              name="TaskList"
-              component={TaskListScreen}
-              options={({ navigation }) => ({
-                title: 'Airdrop Tasks',
-                headerRight: () => (
-                  <TouchableOpacity
-                    onPress={() => navigation.navigate('Settings')}
-                    style={{ paddingHorizontal: 10, paddingVertical: 5 }}
-                  >
-                    <SettingsIcon color={headerTintColor} />
-                  </TouchableOpacity>
-                ),
-              })}
-            />
-            <Stack.Screen
-              name="TaskDetail"
-              component={TaskDetailScreen}
-              options={({ route }) => ({ title: route.params?.taskName || 'Task Details' })}
-            />
-            <Stack.Screen
-              name="AddTask"
-              component={AddTaskScreen}
-              // Pass userId to AddTaskScreen if needed, though it now gets it from auth state
-              // initialParams={user ? { currentUserId: user.uid } : undefined} 
-              options={{ title: 'Add/Edit Task', presentation: 'modal' }}
-            />
-            <Stack.Screen
-              name="Settings"
-              component={SettingsScreen}
-              options={{ title: 'Settings' }}
-            />
-          </>
-        )}
+    <NavigationContainer
+      ref={navigationRef}
+      theme={resolvedTheme === 'dark' ? DarkTheme : DefaultTheme}
+    >
+      <Stack.Navigator initialRouteName={initialRouteName}>
+        <Stack.Screen name="Auth" component={AuthScreen} options={{ headerShown: false }} />
+        <Stack.Screen name="TaskList" component={TaskListScreen} options={{ title: 'Airdrop Tasks' }} />
+        <Stack.Screen name="AddTask" component={AddTaskScreen} options={{ title: 'Add/Edit Task' }} />
+        <Stack.Screen name="TaskDetail" component={TaskDetailScreen} options={{ title: 'Task Details' }} />
+        <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: 'Settings' }} />
       </Stack.Navigator>
     </NavigationContainer>
   );
-}
+};
 
-const AppMobile = () => {
+const App = () => {
   return (
-    <SafeAreaProvider>
-      <ThemeProvider>
-        <AppNavigator />
-      </ThemeProvider>
-    </SafeAreaProvider>
+    <ThemeProvider>
+      <AppContent />
+    </ThemeProvider>
   );
 };
 
-export default AppMobile;
+const styles = StyleSheet.create({
+    loadingContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    loadingText: {
+        marginTop: 10,
+        fontSize: 16,
+    }
+});
+
+export default App;

@@ -1,11 +1,25 @@
-// File: project-root/public/manifest.json
 {
   "short_name": "AirdropMgr",
   "name": "Crypto Airdrop Task Manager",
   "icons": [
-    { "src": "https://placehold.co/64x64/1F2937/FFFFFF?text=Icon&font=Inter", "sizes": "64x64", "type": "image/png", "purpose": "any" },
-    { "src": "https://placehold.co/192x192/1F2937/FFFFFF?text=Icon&font=Inter", "type": "image/png", "sizes": "192x192", "purpose": "any" },
-    { "src": "https://placehold.co/512x512/1F2937/FFFFFF?text=Icon&font=Inter", "type": "image/png", "sizes": "512x512", "purpose": "any maskable" }
+    {
+      "src": "./favicon.ico",
+      "sizes": "64x64 32x32 24x24 16x16",
+      "type": "image/x-icon",
+      "purpose": "any"
+    },
+    {
+      "src": "./logo192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any" 
+    },
+    {
+      "src": "./logo512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
   ],
   "start_url": ".",
   "display": "standalone",

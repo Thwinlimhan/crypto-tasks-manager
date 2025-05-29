@@ -1,106 +1,135 @@
 // File: project-root/mobile/NotificationManager.ts
-import PushNotification from 'react-native-push-notification';
-import type { AirdropTask } from './types'; // Assuming AirdropTask is in types.ts
+// Manages scheduling and cancelling of local push notifications for tasks.
+// Updated to include taskId and taskName in notification payload for deep linking.
 
-const NOTIFICATION_CHANNEL_ID = "airdrop-task-reminders"; // Must match App.tsx and SettingsScreen.tsx
+import PushNotification, { Importance } from 'react-native-push-notification';
+import PushNotificationIOS from '@react-native-community/push-notification-ios';
+import { Platform } from 'react-native';
+import type { AirdropTask } from './types'; // Assuming AirdropTask type is defined
 
-/**
- * Generates a unique numeric ID for a notification based on the task ID.
- * Simple hash function, ensure it's unique enough for your needs or use a more robust UUID.
- * react-native-push-notification requires notification IDs to be numbers for some functions.
- */
-const generateNumericNotificationId = (taskId: string): number => {
+const CHANNEL_ID = 'airdrop-task-reminders';
+const CHANNEL_NAME = 'Task Reminders';
+
+// Call this once when your app initializes
+export const configureNotifications = () => {
+  PushNotification.createChannel(
+    {
+      channelId: CHANNEL_ID,
+      channelName: CHANNEL_NAME,
+      channelDescription: 'Reminders for upcoming airdrop tasks',
+      playSound: true,
+      soundName: 'default',
+      importance: Importance.HIGH,
+      vibrate: true,
+    },
+    (created) => console.log(`Notification channel '${CHANNEL_ID}' created: ${created}`)
+  );
+
+  // Optional: Request permissions for iOS early if needed,
+  // though PushNotification.localNotification will also trigger it.
+  if (Platform.OS === 'ios') {
+    PushNotification.requestPermissions();
+  }
+};
+
+// Generates a consistent numeric ID from a string ID (e.g., Firestore document ID)
+// This is a simple hash function; for more complex scenarios, a more robust hash might be needed.
+export const generateNumericNotificationId = (taskId: string): number => {
   let hash = 0;
   for (let i = 0; i < taskId.length; i++) {
     const char = taskId.charCodeAt(i);
     hash = ((hash << 5) - hash) + char;
     hash |= 0; // Convert to 32bit integer
   }
-  // Ensure positive and within a reasonable range if necessary, though usually not an issue.
-  return Math.abs(hash % 2147483647); // Max 32-bit signed integer
+  return Math.abs(hash % 2147483647); // Ensure positive and within typical integer limits
 };
 
 
-/**
- * Schedules a local notification for a given task.
- * @param task The AirdropTask object.
- * @param fireDate The Date object when the notification should fire.
- * @param appSettings The current application settings, specifically to check enableNotifications.
- */
 export const scheduleNotification = (
-    task: AirdropTask,
-    fireDate: Date,
-    enableNotificationsSetting: boolean
-) => {
-  if (!enableNotificationsSetting) {
-    console.log(`NotificationManager: Notifications are disabled in settings. Skipping schedule for task: ${task.name}`);
-    return null; // Return null if not scheduled
-  }
-
-  if (fireDate.getTime() <= Date.now()) {
-    console.log(`NotificationManager: Fire date for task "${task.name}" is in the past. Skipping notification.`);
+  task: AirdropTask, 
+  fireDate: Date,
+  reschedule: boolean = false
+): number | null => {
+  if (!task.id) {
+    console.warn("NotificationManager: Task ID is missing, cannot schedule notification for task:", task.name);
     return null;
   }
 
-  const notificationId = generateNumericNotificationId(task.id);
+  const numericId = generateNumericNotificationId(task.id);
+  const title = `Reminder: ${task.name}`;
+  const message = `Your task "${task.name}" is due soon! Don't miss out.`;
 
-  PushNotification.localNotificationSchedule({
-    channelId: NOTIFICATION_CHANNEL_ID,
-    id: notificationId, // Unique ID for this notification
-    title: `Task Due: ${task.name}`,
-    message: `Your airdrop task "${task.name}" is due now! Category: ${task.category}. Priority: ${task.priority}.`,
-    date: fireDate,
-    allowWhileIdle: true, // (optional) set notification to work while on doze, default: false
-    playSound: true,
-    soundName: "default",
-    vibrate: true,
-    vibration: 300, // Vibration length in milliseconds
-    // userInfo: { taskId: task.id }, // Optional: To identify task when notification is opened
-    // actions: ['View Task', 'Snooze'], // Example actions
-    // repeatType: undefined, // 'week', 'day', 'hour', 'minute', 'time' - not using for individual tasks
-    // repeatTime: undefined, 
-    invokeApp: true, // Whether to open the app on notification tap
-  });
-
-  console.log(`NotificationManager: Scheduled notification for task "${task.name}" (ID: ${notificationId}) at ${fireDate.toLocaleString()}`);
-  return notificationId; // Return the ID used for scheduling
-};
-
-/**
- * Cancels a specific scheduled local notification by its numeric ID.
- * @param notificationId The numeric ID of the notification to cancel.
- */
-export const cancelNotificationById = (notificationId: number | string) => { // ID can be string from older versions
-  const numericId = typeof notificationId === 'string' ? parseInt(notificationId, 10) : notificationId;
-  if (isNaN(numericId)) {
-      console.warn(`NotificationManager: Invalid notificationId for cancellation: ${notificationId}`);
-      return;
+  // Ensure fireDate is in the future
+  if (fireDate.getTime() <= Date.now()) {
+    console.log(`NotificationManager: Fire date for task "${task.name}" is in the past. Not scheduling.`);
+    return task.notificationId || null; // Return existing ID if any, or null
   }
-  PushNotification.cancelLocalNotification(numericId.toString()); // API expects string ID
-  console.log(`NotificationManager: Attempted to cancel notification with ID: ${numericId}`);
+  
+  console.log(`NotificationManager: Scheduling notification for task "${task.name}" (ID: ${task.id}, NumericID: ${numericId}) at ${fireDate.toLocaleString()}`);
+
+  if (Platform.OS === 'ios') {
+    // For iOS, userInfo is the standard way to pass data.
+    // The id for addNotificationRequest is a string.
+    PushNotificationIOS.addNotificationRequest({
+      id: numericId.toString(), // Use numericId as string for iOS request ID
+      title: title,
+      body: message,
+      category: CHANNEL_ID, // Can be used for iOS specific actions
+      fireDate: fireDate,
+      repeats: false, // Assuming non-repeating, adjust if needed
+      sound: 'default',
+      userInfo: { 
+        taskId: task.id, 
+        taskName: task.name, // Pass taskName for context
+        numericNotificationId: numericId, // Store the numeric ID used
+        source: 'AirdropTaskManagerApp' // Identify the source
+      },
+    });
+  } else { // Android
+    PushNotification.localNotificationSchedule({
+      channelId: CHANNEL_ID,
+      id: numericId, // Numeric ID for Android
+      title: title,
+      message: message,
+      date: fireDate,
+      allowWhileIdle: true,
+      playSound: true,
+      soundName: 'default',
+      vibrate: true,
+      vibration: 300,
+      // Use 'userInfo' for consistency, react-native-push-notification will handle it.
+      // It gets stringified and put into the 'data' field of the Android intent extras.
+      userInfo: { 
+        taskId: task.id, 
+        taskName: task.name,
+        numericNotificationId: numericId,
+        source: 'AirdropTaskManagerApp'
+      }, 
+      // repeatType: undefined, // 'day', 'week', 'month', 'year' or undefined for no repeat
+    });
+  }
+  return numericId; // Return the numeric ID used for scheduling
 };
 
-
-/**
- * Cancels a scheduled notification for a given task ID.
- * @param taskId The ID of the task whose notification should be cancelled.
- */
-export const cancelTaskNotification = (taskId: string) => {
-    if (!taskId) return;
-    const notificationId = generateNumericNotificationId(taskId);
-    cancelNotificationById(notificationId);
+export const cancelTaskNotification = (taskId: string | number) => {
+  const idToCancel = typeof taskId === 'string' ? generateNumericNotificationId(taskId) : taskId;
+  
+  console.log(`NotificationManager: Cancelling notification with ID: ${idToCancel}`);
+  if (Platform.OS === 'ios') {
+    PushNotificationIOS.removePendingNotificationRequests([idToCancel.toString()]);
+    // Also try to remove delivered notifications if they might exist with this ID
+    PushNotificationIOS.removeDeliveredNotifications([idToCancel.toString()]);
+  } else {
+    PushNotification.cancelLocalNotification(idToCancel); // For Android, uses numeric ID
+  }
 };
 
-
-/**
- * Cancels all scheduled local notifications for the app.
- */
 export const cancelAllNotifications = () => {
-  PushNotification.cancelAllLocalNotifications();
-  console.log("NotificationManager: All scheduled notifications cancelled.");
+  console.log("NotificationManager: Cancelling ALL local notifications.");
+  if (Platform.OS === 'ios') {
+    PushNotificationIOS.removeAllPendingNotificationRequests();
+    PushNotificationIOS.removeAllDeliveredNotifications(); // Clear delivered ones too
+  } else {
+    PushNotification.cancelAllLocalNotifications();
+  }
 };
-
-// You might add functions here to update notifications if task details change significantly.
-// For now, the approach is to cancel and reschedule.
-
-export { generateNumericNotificationId };
