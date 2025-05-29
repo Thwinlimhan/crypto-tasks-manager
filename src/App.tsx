@@ -25,12 +25,12 @@ import {
 import { AirdropTask, AirdropTaskFS, TaskStep } from './types'; 
 
 // --- Imported Components ---
-import Icon from './components/Icon';
-import AuthComponent from './components/AuthComponent';
-import AnalyticsDashboard from './components/AnalyticsDashboard';
+import Icon from './components/Icon.tsx';
+import AuthComponent from './components/AuthComponent.tsx';
+import AnalyticsDashboard from './components/AnalyticsDashboard.tsx';
 
 // --- Imported Firestore Helper ---
-import { getWebTasksCollectionPathForUser } from './utils/firestoreHelper';
+import { getWebTasksCollectionPathForUser } from './utils/firestoreHelper.ts';
 
 // VAPID public key - replace with your actual key
 const VAPID_PUBLIC_KEY = 'YOUR_PUBLIC_VAPID_KEY_HERE'; // IMPORTANT: Replace this!
